@@ -1,0 +1,89 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id          String   @id @default(cuid())
+  email       String   @unique
+  name        String?
+  password    String
+  avatarUrl   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  settings    UserSettings?
+  assignments DailyAssignment[]
+  sessions    PracticeSession[]
+}
+
+model UserSettings {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  targetLanguage    String   @default("en")
+  difficultyLevel   String   @default("intermediate") // beginner | intermediate | advanced
+  practiceScenarios String[]
+  dailyGoalMinutes  Int      @default(10)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Article {
+  id          String   @id @default(cuid())
+  title       String
+  content     String   // JSON string: DialogueTurn[]
+  userRole    String   // the character the user plays, e.g. "Alex"
+  language    String
+  difficulty  String
+  scenario    String
+  wordCount   Int      // total target words across all user turns
+  generatedAt DateTime @default(now())
+
+  assignments DailyAssignment[]
+  sessions    PracticeSession[]
+}
+
+model DailyAssignment {
+  id           String   @id @default(cuid())
+  userId       String
+  articleId    String
+  assignedDate DateTime @db.Date
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  article Article @relation(fields: [articleId], references: [id])
+
+  @@unique([userId, assignedDate])
+}
+
+model PracticeSession {
+  id              String    @id @default(cuid())
+  userId          String
+  articleId       String
+  startedAt       DateTime  @default(now())
+  completedAt     DateTime?
+  durationSeconds Int?
+  transcribedText String?   // JSON: LineResult[]
+  status          String    @default("in_progress") // in_progress | completed | abandoned
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  article Article @relation(fields: [articleId], references: [id])
+  score   Score?
+}
+
+model Score {
+  id            String @id @default(cuid())
+  sessionId     String @unique
+  wordCoverage  Float
+  fluencyWpm    Int
+  accuracy      Float
+  totalScore    Int
+  highlightData Json   // LineResult[] with per-line highlight data
+
+  session PracticeSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
