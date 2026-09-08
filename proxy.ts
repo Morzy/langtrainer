@@ -1,16 +1,12 @@
-import { auth } from "@/auth";
+import NextAuth from "next-auth";
+import { authConfig } from "./auth.config";
 import { NextResponse } from "next/server";
+
+const { auth } = NextAuth(authConfig);
 
 export default auth((req) => {
   const { pathname } = req.nextUrl;
   const isLoggedIn = !!req.auth;
-
-  const publicPaths = ["/login", "/register", "/api/auth"];
-  const isPublic = publicPaths.some((p) => pathname.startsWith(p));
-
-  if (!isLoggedIn && !isPublic) {
-    return NextResponse.redirect(new URL("/login", req.url));
-  }
 
   if (isLoggedIn && (pathname === "/login" || pathname === "/register")) {
     return NextResponse.redirect(new URL("/", req.url));

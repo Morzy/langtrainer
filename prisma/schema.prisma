@@ -87,3 +87,12 @@ model Score {
 
   session PracticeSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 }
+
+model GenerationLock {
+  id        String   @id @default(cuid())
+  userId    String
+  lockDate  DateTime @db.Date
+  createdAt DateTime @default(now())
+
+  @@unique([userId, lockDate])
+}

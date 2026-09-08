@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import type { DialogueTurn } from "@/lib/article-generator";
+import type { DialogueTurn } from "@/app/api/daily-article/lib/article-generator";
+import { TypingPractice } from "./components/TypingPractice";
 
 type Article = {
   id: string;
@@ -10,6 +11,7 @@ type Article = {
   content: string; // JSON string of DialogueTurn[]
   userRole: string;
   difficulty: string;
+  language: string;
 };
 
 type LineCapture = {
@@ -34,13 +36,16 @@ interface SpeechRecognitionInstance {
   onerror: ((e: { error: string }) => void) | null;
 }
 
+type PracticeMode = "speech" | "typing";
+
 export default function PracticePage() {
   const router = useRouter();
   const [article, setArticle] = useState<Article | null>(null);
   const [turns, setTurns] = useState<DialogueTurn[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [status, setStatus] = useState<"loading" | "ready" | "submitting">("loading");
+  const [status, setStatus] = useState<"checking" | "idle" | "generating" | "ready" | "submitting">("checking");
   const [error, setError] = useState("");
+  const [mode, setMode] = useState<PracticeMode>("speech");
 
   // Map of turnIndex → captured line
   const [captures, setCaptures] = useState<Record<number, LineCapture>>({});
@@ -53,18 +58,40 @@ export default function PracticePage() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef = useRef(0);
   const finalRef = useRef("");
+  const checkedRef = useRef(false);
 
+  function applyArticle(a: Article) {
+    setArticle(a);
+    setTurns(JSON.parse(a.content) as DialogueTurn[]);
+    setStatus("ready");
+  }
+
+  // On mount: silently check if today's article already exists
   useEffect(() => {
+    if (checkedRef.current) return;
+    checkedRef.current = true;
     fetch("/api/daily-article")
       .then((r) => r.json())
       .then((d) => {
-        if (!d.article) { setError("无法加载今日文章"); return; }
-        setArticle(d.article);
-        setTurns(JSON.parse(d.article.content) as DialogueTurn[]);
-        setStatus("ready");
+        if (d.article) { applyArticle(d.article); }
+        else { setStatus("idle"); }
       })
-      .catch(() => setError("网络错误，请刷新重试"));
+      .catch(() => setStatus("idle"));
   }, []);
+
+  async function generateArticle() {
+    setStatus("generating");
+    setError("");
+    try {
+      const r = await fetch("/api/daily-article", { method: "POST" });
+      const d = await r.json();
+      if (!d.article) { setError("生成失败，请重试"); setStatus("idle"); return; }
+      applyArticle(d.article);
+    } catch {
+      setError("网络错误，请重试");
+      setStatus("idle");
+    }
+  }
 
   const stopRecording = useCallback((turnIdx: number) => {
     if (timerRef.current) clearInterval(timerRef.current);
@@ -152,8 +179,23 @@ export default function PracticePage() {
     router.push(`/practice/result?sessionId=${sessionId}&score=${data.score.totalScore}`);
   }
 
-  if (status === "loading") return (
-    <div className="flex items-center justify-center py-20 text-gray-400">加载今日对话...</div>
+  if (status === "idle") return (
+    <div className="flex flex-col items-center justify-center py-20 gap-6">
+      <div className="text-center">
+        <p className="text-gray-400 text-sm mb-1">准备好了吗？</p>
+        <h1 className="text-2xl font-bold text-gray-800">今日练习</h1>
+      </div>
+      {error && <p className="text-red-600 text-sm">{error}</p>}
+      <button onClick={generateArticle} className="btn-primary px-8">
+        生成今日文章 →
+      </button>
+    </div>
+  );
+
+  if (status === "checking" || status === "generating") return (
+    <div className="flex items-center justify-center py-20 text-gray-400">
+      {status === "checking" ? "检查今日文章..." : "生成中，请稍候..."}
+    </div>
   );
   if (error) return (
     <div className="text-center py-20">
@@ -162,8 +204,44 @@ export default function PracticePage() {
     </div>
   );
 
+  const modeTabs = (
+    <div className="flex rounded-lg border border-gray-200 bg-gray-50 p-1 gap-1">
+      <button
+        onClick={() => setMode("speech")}
+        className={`flex-1 rounded-md py-1.5 text-sm font-medium transition-colors ${
+          mode === "speech"
+            ? "bg-white text-gray-900 shadow-sm"
+            : "text-gray-500 hover:text-gray-700"
+        }`}
+      >
+        🎤 口语练习
+      </button>
+      <button
+        onClick={() => setMode("typing")}
+        className={`flex-1 rounded-md py-1.5 text-sm font-medium transition-colors ${
+          mode === "typing"
+            ? "bg-white text-gray-900 shadow-sm"
+            : "text-gray-500 hover:text-gray-700"
+        }`}
+      >
+        ⌨️ 打字练习
+      </button>
+    </div>
+  );
+
+  if (mode === "typing") {
+    return (
+      <div className="max-w-2xl mx-auto space-y-4">
+        {modeTabs}
+        <TypingPractice article={article!} turns={turns} />
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-2xl mx-auto space-y-4">
+      {modeTabs}
+
       <div className="flex items-center justify-between">
         <div>
           <p className="text-xs text-gray-400 uppercase tracking-wide">今日对话练习</p>

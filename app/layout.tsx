@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import "./globals.css";
+import './globals.css';
 
 export const metadata: Metadata = {
   title: "LanTrainer — 每日外语口语练习",
@@ -19,3 +19,6 @@ export default function RootLayout({
     </html>
   );
 }
+
+
+//TODO FIX LINT PROBLEM

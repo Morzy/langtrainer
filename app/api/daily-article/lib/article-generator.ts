@@ -32,9 +32,9 @@ const DialogueTurnSchema = z.object({
   isUser: z.boolean().describe("Whether this turn belongs to the learner"),
   targetText: z
     .string()
-    .optional()
+    .nullable()
     .describe(
-      "Required when isUser=true: the natural English translation the learner should say aloud"
+      "When isUser=true: the natural English translation the learner should say aloud. Set null for non-user turns."
     ),
 });
 
@@ -50,7 +50,7 @@ export type DialogueTurn = z.infer<typeof DialogueTurnSchema>;
 export type DialogueArticle = z.infer<typeof DialogueArticleSchema>;
 
 const model = new ChatOpenAI({
-  model: "deepseek-v4-flash",
+  model: "deepseek-v4-flash-0731",
   configuration: {
     baseURL:
       "https://llm-dciqqfsl0b8yyypt.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
@@ -58,8 +58,6 @@ const model = new ChatOpenAI({
   apiKey: process.env.ALIYUN_API_KEY,
   maxTokens: 2048,
   temperature: 0,
-}).withStructuredOutput(DialogueArticleSchema, {
-  name: "generate_dialogue",
 });
 
 export async function generateArticle(
@@ -81,11 +79,29 @@ User turns: ${userTurns} turns (the character named "You")
 Rules:
 1. There are 3-4 speakers total. One is always named "You" (the learner's role).
 2. For turns spoken by "You": write ONLY Chinese in "text", and write the natural English equivalent in "targetText".
-3. For all other speakers: write English in "text". Omit "targetText".
-4. Keep each turn 1-2 sentences. Natural, conversational language.
-5. The dialogue must flow naturally around the given scenario.`;
+3. For all other speakers: write English in "text". Set "targetText" to null.
+4. Keep each turn 2-4 sentences. Natural, conversational language.
+5. The dialogue must flow naturally around the given scenario.
 
-  const dialogue = (await model.invoke(prompt)) as DialogueArticle;
+Return ONLY a valid JSON object with this exact shape — no markdown, no extra text:
+{
+  "title": "...",
+  "userRole": "You",
+  "turns": [
+    { "speaker": "...", "text": "...", "isUser": false, "targetText": null },
+    { "speaker": "You", "text": "（中文）", "isUser": true, "targetText": "English..." }
+  ]
+}`;
+
+  const response = await model.invoke(prompt);
+  const raw = typeof response.content === "string"
+    ? response.content
+    : JSON.stringify(response.content);
+
+  // Strip markdown code fences if the model adds them
+  const jsonText = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
+
+  const dialogue = DialogueArticleSchema.parse(JSON.parse(jsonText));
 
   const wordCount = dialogue.turns
     .filter((t: DialogueTurn) => t.isUser && t.targetText)
@@ -94,6 +110,5 @@ Rules:
         sum + (t.targetText?.split(/\s+/).filter(Boolean).length ?? 0),
       0
     );
-
   return { dialogue, wordCount };
 }

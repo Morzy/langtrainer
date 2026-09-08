@@ -1,7 +1,7 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { scoreDialogueLine, aggregateScore, LineResult } from "@/lib/scoring";
-import { DialogueTurn } from "@/lib/article-generator";
+import { DialogueTurn } from "@/app/api/daily-article/lib/article-generator";
 import { NextRequest, NextResponse } from "next/server";
 
 type LineSubmission = {
