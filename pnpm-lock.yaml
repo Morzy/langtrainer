@@ -23,6 +23,9 @@ importers:
       '@langchain/langgraph':
         specifier: ^1.4.12
         version: 1.4.12(@langchain/core@1.2.9(openai@7.5.0(zod@3.25.76)))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(zod@3.25.76)
+      '@langchain/langgraph-checkpoint-postgres':
+        specifier: ^1.0.5
+        version: 1.0.5(@langchain/core@1.2.9(openai@7.5.0(zod@3.25.76)))(@langchain/langgraph-checkpoint@1.1.5(@langchain/core@1.2.9(openai@7.5.0(zod@3.25.76))))
       '@langchain/openai':
         specifier: ^1.5.10
         version: 1.5.10(@langchain/core@1.2.9(openai@7.5.0(zod@3.25.76)))
@@ -35,6 +38,9 @@ importers:
       bcryptjs:
         specifier: ^2.4.3
         version: 2.4.3
+      install:
+        specifier: ^0.13.0
+        version: 0.13.0
       next:
         specifier: 16.3.1
         version: 16.3.1(@types/node@22.20.1)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -400,6 +406,13 @@ packages:
   '@langchain/core@1.2.9':
     resolution: {integrity: sha512-conzSEj9Zu1AyXJLXsSbgrtxtxinmI1yGqQ5CIJZSoV5rvv+yvQE/vgBnoySpBQ/bl3YPgj2FL/gbDjWykLSfg==}
     engines: {node: '>=20'}
+
+  '@langchain/langgraph-checkpoint-postgres@1.0.5':
+    resolution: {integrity: sha512-kCpp9pOidYDexhOvpWN4Z6G4npr4+OH8Qe/2oo38NLbRa+AzMcuZDiEI8y9bh4v5fcMy/dhlJClCSQzl86ddUw==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      '@langchain/core': ^1.1.44
+      '@langchain/langgraph-checkpoint': ^1.1.4
 
   '@langchain/langgraph-checkpoint@1.1.5':
     resolution: {integrity: sha512-BwDwl5VeTOh6CVuiIPgsUgfK51vTJDMSbFcSCUfjJWsl8/DPdK/mbv+ejxJstkSk/BlSPMP4JfXWcN6jD2ea2Q==}
@@ -1742,6 +1755,10 @@ packages:
     resolution: {integrity: sha512-JmXMZ6wuvDmLiHEml9ykzqO6lwFbof0GG4IkcGaENdCRDDmMVnny7s5HsIgHCbaq0w2MyPhDqkhTUgS2LU2PHA==}
     engines: {node: '>=0.8.19'}
 
+  install@0.13.0:
+    resolution: {integrity: sha512-zDml/jzr2PKU9I8J/xyZBQn8rPCAY//UOYNmR01XwNwyfhEWObo2SWfSl1+0tm1u6PhxLwDnfsT/6jB7OUxqFA==}
+    engines: {node: '>= 0.10'}
+
   internal-slot@1.1.0:
     resolution: {integrity: sha512-4gd7VpWNQNB4UKKCFFVcp1AVv+FMOgs9NKzjHKusc8jTMhd5eL1NqQqOpE0KzMds804/yHlglp3uxgluOqAPLw==}
     engines: {node: '>= 0.4'}
@@ -3080,6 +3097,14 @@ snapshots:
       - '@opentelemetry/sdk-trace-base'
       - openai
       - ws
+
+  '@langchain/langgraph-checkpoint-postgres@1.0.5(@langchain/core@1.2.9(openai@7.5.0(zod@3.25.76)))(@langchain/langgraph-checkpoint@1.1.5(@langchain/core@1.2.9(openai@7.5.0(zod@3.25.76))))':
+    dependencies:
+      '@langchain/core': 1.2.9(openai@7.5.0(zod@3.25.76))
+      '@langchain/langgraph-checkpoint': 1.1.5(@langchain/core@1.2.9(openai@7.5.0(zod@3.25.76)))
+      pg: 8.23.0
+    transitivePeerDependencies:
+      - pg-native
 
   '@langchain/langgraph-checkpoint@1.1.5(@langchain/core@1.2.9(openai@7.5.0(zod@3.25.76)))':
     dependencies:
@@ -4597,6 +4622,8 @@ snapshots:
       resolve-from: 4.0.0
 
   imurmurhash@0.1.4: {}
+
+  install@0.13.0: {}
 
   internal-slot@1.1.0:
     dependencies:

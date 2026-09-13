@@ -93,7 +93,7 @@ Return ONLY a valid JSON object with this exact shape — no markdown, no extra 
   ]
 }`;
 
-  const response = await model.invoke(prompt);
+  const response = await model.invoke(prompt, {response_format: {type: 'json_object'}});
   const raw = typeof response.content === "string"
     ? response.content
     : JSON.stringify(response.content);

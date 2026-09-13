@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import type { LineResult } from "@/lib/scoring";
@@ -20,6 +20,8 @@ type SessionData = {
   score: ScoreData;
 };
 
+type ChatMessage = { role: "user" | "coach"; text: string };
+
 function MiniBar({ value, label }: { value: number; label: string }) {
   return (
     <div className="space-y-1">
@@ -33,6 +35,115 @@ function MiniBar({ value, label }: { value: number; label: string }) {
           style={{ width: `${value * 100}%` }}
         />
       </div>
+    </div>
+  );
+}
+
+function CoachPanel({ sessionId }: { sessionId: string }) {
+  const [open, setOpen] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  // Auto-load on first open
+  useEffect(() => {
+    if (open && messages.length === 0) {
+      sendMessage();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  async function sendMessage(text?: string) {
+    const userText = text?.trim();
+    if (userText) setMessages((m) => [...m, { role: "user", text: userText }]);
+    setInput("");
+    setLoading(true);
+    try {
+      const res = await fetch("/api/practice/coach", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, message: userText }),
+      });
+      const d = await res.json();
+      setMessages((m) => [...m, { role: "coach", text: d.reply ?? "（无回复）" }]);
+    } catch {
+      setMessages((m) => [...m, { role: "coach", text: "教练暂时离线，请稍后重试。" }]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter" && !e.shiftKey && input.trim()) {
+      e.preventDefault();
+      sendMessage(input);
+    }
+  }
+
+  return (
+    <div className="card border border-gray-200">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between text-left"
+      >
+        <span className="font-semibold text-gray-700">🤖 AI 教练建议</span>
+        <span className="text-gray-400 text-sm">{open ? "收起 ▲" : "展开 ▼"}</span>
+      </button>
+
+      {open && (
+        <div className="mt-4 space-y-3">
+          {/* Chat history */}
+          <div className="max-h-64 overflow-y-auto space-y-3 pr-1">
+            {messages.map((m, i) => (
+              <div key={i} className={`flex gap-2 ${m.role === "user" ? "flex-row-reverse" : "flex-row"}`}>
+                <div className={`rounded-2xl px-3 py-2 text-sm leading-relaxed max-w-[85%] ${
+                  m.role === "user"
+                    ? "bg-brand-600 text-white rounded-tr-sm"
+                    : "bg-gray-100 text-gray-800 rounded-tl-sm"
+                }`}>
+                  {m.text}
+                </div>
+              </div>
+            ))}
+            {loading && (
+              <div className="flex gap-2">
+                <div className="bg-gray-100 rounded-2xl rounded-tl-sm px-3 py-2 text-sm text-gray-400">
+                  <span className="animate-pulse">教练正在思考...</span>
+                </div>
+              </div>
+            )}
+            <div ref={bottomRef} />
+          </div>
+
+          {/* Input */}
+          <div className="flex gap-2">
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="追问教练..."
+              disabled={loading}
+              className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-400 focus:outline-none disabled:opacity-50"
+            />
+            <button
+              onClick={() => input.trim() && sendMessage(input)}
+              disabled={loading || !input.trim()}
+              className="btn-primary px-4 py-2 text-sm disabled:opacity-40"
+            >
+              发送
+            </button>
+          </div>
+
+          <p className="text-xs text-gray-400 text-center">
+            教练会记住你历史上的练习表现（长期记忆）
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -122,6 +233,9 @@ export default function ResultPage() {
           ))}
         </div>
       )}
+
+      {/* AI Coach */}
+      {sessionId && <CoachPanel sessionId={sessionId} />}
 
       <div className="flex gap-3">
         <Link href="/" className="btn-primary flex-1 text-center">返回首页</Link>

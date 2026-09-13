@@ -1,63 +1,28 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useRef, useEffect } from "react";
 import type { DialogueTurn } from "@/app/api/daily-article/lib/article-generator";
+import { SpeechPractice } from "./components/SpeechPractice";
 import { TypingPractice } from "./components/TypingPractice";
 
 type Article = {
   id: string;
   title: string;
-  content: string; // JSON string of DialogueTurn[]
+  content: string;
   userRole: string;
   difficulty: string;
   language: string;
 };
 
-type LineCapture = {
-  transcript: string;
-  durationSeconds: number;
-};
-
-declare global {
-  interface Window {
-    SpeechRecognition: new () => SpeechRecognitionInstance;
-    webkitSpeechRecognition: new () => SpeechRecognitionInstance;
-  }
-}
-interface SpeechRecognitionInstance {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  start(): void;
-  stop(): void;
-  onresult: ((e: { results: SpeechRecognitionResultList; resultIndex: number }) => void) | null;
-  onend: (() => void) | null;
-  onerror: ((e: { error: string }) => void) | null;
-}
-
 type PracticeMode = "speech" | "typing";
+type PageStatus = "checking" | "idle" | "generating" | "ready";
 
 export default function PracticePage() {
-  const router = useRouter();
   const [article, setArticle] = useState<Article | null>(null);
   const [turns, setTurns] = useState<DialogueTurn[]>([]);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [status, setStatus] = useState<"checking" | "idle" | "generating" | "ready" | "submitting">("checking");
+  const [status, setStatus] = useState<PageStatus>("checking");
   const [error, setError] = useState("");
   const [mode, setMode] = useState<PracticeMode>("speech");
-
-  // Map of turnIndex → captured line
-  const [captures, setCaptures] = useState<Record<number, LineCapture>>({});
-  const [interims, setInterims] = useState<Record<number, string>>({});
-  // Which turn is currently being recorded
-  const [recordingIdx, setRecordingIdx] = useState<number | null>(null);
-  const [countdown, setCountdown] = useState(0);
-
-  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const startTimeRef = useRef(0);
-  const finalRef = useRef("");
   const checkedRef = useRef(false);
 
   function applyArticle(a: Article) {
@@ -66,16 +31,12 @@ export default function PracticePage() {
     setStatus("ready");
   }
 
-  // On mount: silently check if today's article already exists
   useEffect(() => {
     if (checkedRef.current) return;
     checkedRef.current = true;
     fetch("/api/daily-article")
       .then((r) => r.json())
-      .then((d) => {
-        if (d.article) { applyArticle(d.article); }
-        else { setStatus("idle"); }
-      })
+      .then((d) => d.article ? applyArticle(d.article) : setStatus("idle"))
       .catch(() => setStatus("idle"));
   }, []);
 
@@ -93,91 +54,11 @@ export default function PracticePage() {
     }
   }
 
-  const stopRecording = useCallback((turnIdx: number) => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    recognitionRef.current?.stop();
-    const duration = Math.round((Date.now() - startTimeRef.current) / 1000);
-    const transcript = finalRef.current.trim();
-    setCaptures((prev) => ({ ...prev, [turnIdx]: { transcript, durationSeconds: Math.max(duration, 1) } }));
-    setInterims((prev) => { const n = { ...prev }; delete n[turnIdx]; return n; });
-    setRecordingIdx(null);
-  }, []);
-
-  const startRecording = useCallback(async (turnIdx: number) => {
-    if (recordingIdx !== null) return;
-    if (!sessionId) {
-      const res = await fetch("/api/practice/start", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ articleId: article!.id }),
-      });
-      const d = await res.json();
-      setSessionId(d.sessionId);
-    }
-
-    const SpeechRecognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
-    if (!SpeechRecognition) { setError("请使用 Chrome 浏览器"); return; }
-
-    finalRef.current = "";
-    startTimeRef.current = Date.now();
-    setRecordingIdx(turnIdx);
-
-    const rec = new SpeechRecognition();
-    rec.continuous = true;
-    rec.interimResults = true;
-    rec.lang = "en-US";
-    recognitionRef.current = rec;
-
-    rec.onresult = (e) => {
-      let interim = "";
-      let final = finalRef.current;
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const t = e.results[i][0].transcript;
-        if (e.results[i].isFinal) final += t + " ";
-        else interim += t;
-      }
-      finalRef.current = final;
-      setInterims((prev) => ({ ...prev, [turnIdx]: final + interim }));
-    };
-
-    rec.onerror = (e) => { if (e.error !== "no-speech") setError(`录音错误: ${e.error}`); };
-    rec.onend = () => {};
-    rec.start();
-
-    // 10-second auto-stop
-    let secs = 10;
-    setCountdown(secs);
-    timerRef.current = setInterval(() => {
-      secs -= 1;
-      setCountdown(secs);
-      if (secs <= 0) stopRecording(turnIdx);
-    }, 1000);
-  }, [recordingIdx, sessionId, article, stopRecording]);
-
-  useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
-
-  const userTurns = turns.filter((t) => t.isUser);
-  const doneCount = Object.keys(captures).length;
-  const allDone = userTurns.length > 0 && doneCount >= userTurns.length;
-
-  async function handleSubmit() {
-    if (!sessionId || !allDone) return;
-    setStatus("submitting");
-
-    const lines = Object.entries(captures).map(([idx, cap]) => ({
-      turnIndex: Number(idx),
-      transcript: cap.transcript,
-      durationSeconds: cap.durationSeconds,
-    }));
-
-    const res = await fetch("/api/practice/submit", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId, lines }),
-    });
-    const data = await res.json();
-    router.push(`/practice/result?sessionId=${sessionId}&score=${data.score.totalScore}`);
-  }
+  if (status === "checking" || status === "generating") return (
+    <div className="flex items-center justify-center py-20 text-gray-400">
+      {status === "checking" ? "检查今日文章..." : "生成中，请稍候..."}
+    </div>
+  );
 
   if (status === "idle") return (
     <div className="flex flex-col items-center justify-center py-20 gap-6">
@@ -192,26 +73,12 @@ export default function PracticePage() {
     </div>
   );
 
-  if (status === "checking" || status === "generating") return (
-    <div className="flex items-center justify-center py-20 text-gray-400">
-      {status === "checking" ? "检查今日文章..." : "生成中，请稍候..."}
-    </div>
-  );
-  if (error) return (
-    <div className="text-center py-20">
-      <p className="text-red-600 mb-4">{error}</p>
-      <button onClick={() => window.location.reload()} className="btn-secondary">刷新重试</button>
-    </div>
-  );
-
   const modeTabs = (
     <div className="flex rounded-lg border border-gray-200 bg-gray-50 p-1 gap-1">
       <button
         onClick={() => setMode("speech")}
         className={`flex-1 rounded-md py-1.5 text-sm font-medium transition-colors ${
-          mode === "speech"
-            ? "bg-white text-gray-900 shadow-sm"
-            : "text-gray-500 hover:text-gray-700"
+          mode === "speech" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
         }`}
       >
         🎤 口语练习
@@ -219,9 +86,7 @@ export default function PracticePage() {
       <button
         onClick={() => setMode("typing")}
         className={`flex-1 rounded-md py-1.5 text-sm font-medium transition-colors ${
-          mode === "typing"
-            ? "bg-white text-gray-900 shadow-sm"
-            : "text-gray-500 hover:text-gray-700"
+          mode === "typing" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
         }`}
       >
         ⌨️ 打字练习
@@ -229,123 +94,13 @@ export default function PracticePage() {
     </div>
   );
 
-  if (mode === "typing") {
-    return (
-      <div className="max-w-2xl mx-auto space-y-4">
-        {modeTabs}
-        <TypingPractice article={article!} turns={turns} />
-      </div>
-    );
-  }
-
   return (
     <div className="max-w-2xl mx-auto space-y-4">
       {modeTabs}
-
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-xs text-gray-400 uppercase tracking-wide">今日对话练习</p>
-          <h1 className="text-xl font-bold">{article?.title}</h1>
-        </div>
-        <div className="text-sm text-gray-500">
-          已完成 <span className="font-bold text-brand-600">{doneCount}</span> / {userTurns.length} 句
-        </div>
-      </div>
-
-      <div className="card bg-blue-50 border-blue-100 text-sm text-blue-700 py-3">
-        你扮演 <strong>{article?.userRole}</strong>。你的台词以中文显示——请将其翻译成英文并大声说出来。其他角色的台词为英文参考。
-      </div>
-
-      <div className="space-y-3">
-        {turns.map((turn, idx) => {
-          const isUser = turn.isUser;
-          const captured = captures[idx];
-          const interim = interims[idx];
-          const isRecording = recordingIdx === idx;
-
-          return (
-            <div key={idx} className={`flex gap-3 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
-              {/* Avatar */}
-              <div className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
-                isUser ? "bg-brand-600 text-white" : "bg-gray-200 text-gray-600"
-              }`}>
-                {turn.speaker[0]}
-              </div>
-
-              <div className={`flex flex-col gap-1 max-w-[75%] ${isUser ? "items-end" : "items-start"}`}>
-                <span className="text-xs text-gray-400">{turn.speaker}</span>
-
-                <div className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
-                  isUser
-                    ? "bg-brand-600 text-white rounded-tr-sm"
-                    : "bg-white border border-gray-200 text-gray-800 rounded-tl-sm"
-                }`}>
-                  {turn.text}
-                </div>
-
-                {/* User line controls */}
-                {isUser && (
-                  <div className="flex items-center gap-2 mt-1">
-                    {captured ? (
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-green-600 font-medium">✓ 已录制</span>
-                        <span className="text-xs text-gray-400 italic max-w-48 truncate">
-                          &ldquo;{captured.transcript || "（无识别内容）"}&rdquo;
-                        </span>
-                        <button
-                          onClick={() => {
-                            setCaptures((p) => { const n = { ...p }; delete n[idx]; return n; });
-                          }}
-                          className="text-xs text-gray-400 hover:text-gray-600"
-                        >
-                          重录
-                        </button>
-                      </div>
-                    ) : isRecording ? (
-                      <div className="flex items-center gap-2">
-                        <span className="animate-pulse text-red-500 text-xs font-medium">
-                          ● 录音中 {countdown}s
-                        </span>
-                        <span className="text-xs text-gray-400 italic max-w-36 truncate">
-                          {interim || "等待..."}
-                        </span>
-                        <button
-                          onClick={() => stopRecording(idx)}
-                          className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded hover:bg-red-200"
-                        >
-                          停止
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => startRecording(idx)}
-                        disabled={recordingIdx !== null && !isRecording}
-                        className="text-xs bg-white border border-brand-300 text-brand-700 px-3 py-1 rounded-full hover:bg-brand-50 disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        🎤 说出翻译
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="sticky bottom-4 pt-4">
-        <button
-          onClick={handleSubmit}
-          disabled={!allDone || status === "submitting"}
-          className="btn-primary w-full"
-        >
-          {status === "submitting"
-            ? "评分中..."
-            : allDone
-            ? "提交评分 →"
-            : `还剩 ${userTurns.length - doneCount} 句未完成`}
-        </button>
-      </div>
+      {mode === "speech"
+        ? <SpeechPractice article={article!} turns={turns} />
+        : <TypingPractice article={article!} turns={turns} />
+      }
     </div>
   );
 }
